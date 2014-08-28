@@ -1,5 +1,2 @@
-build/
-bin/
-lib/
-db/
-.rust/
+/Cargo.lock
+/target

@@ -1,20 +1,23 @@
-#[crate_id = "leveldb"];
-
-#[comment = "A LevelDB binding in Rust."];
-#[license = "MIT"];
-#[crate_type = "lib"];
-#[allow(dead_code)];
+#![crate_name = "leveldb"]
+#![comment = "A LevelDB binding in Rust."]
+#![license = "MIT"]
+#![crate_type = "lib"]
+#![allow(dead_code)]
 
 // #[deny(non_camel_case_types)];
 // #[deny(missing_doc)];
 
-#[feature(macro_rules)];
-#[feature(globs)];
+#![feature(macro_rules)]
+#![feature(globs)]
 
-use std::ptr::{mut_null, to_mut_unsafe_ptr, is_null, is_not_null};
-use std::str::raw::from_c_str;
-use std::libc::{c_char, size_t};
-use std::vec::raw::from_buf_raw;
+extern crate libc;
+
+use std::ptr::{mut_null};
+//use std::string::raw::std::string::raw::from_buf;
+use libc::{c_char, size_t};
+use std::vec::raw::from_buf;
+use std::owned::{Box};
+use std::mem;
 
 use self::cleveldb::*;
 use self::options::*;
@@ -46,9 +49,9 @@ pub struct DB {
     db: *mut leveldb_t
 }
 
-pub type error = ~str;
+pub type error = String;
 
-fn to_c_open_options(options: &[OpenOption]) -> *leveldb_options_t {
+fn to_c_open_options(options: &[OpenOption]) -> *const leveldb_options_t {
     unsafe {
         let c_options = leveldb_options_create();
         for option in options.iter() {
@@ -64,11 +67,11 @@ fn to_c_open_options(options: &[OpenOption]) -> *leveldb_options_t {
                 }
             }
         }
-        c_options as *leveldb_options_t
+        c_options as *const leveldb_options_t
     }
 }
 
-fn to_c_write_options(options: &[WriteOption]) -> *leveldb_writeoptions_t {
+fn to_c_write_options(options: &[WriteOption]) -> *const leveldb_writeoptions_t {
     unsafe {
         let c_options = leveldb_writeoptions_create();
         for option in options.iter() {
@@ -78,11 +81,11 @@ fn to_c_write_options(options: &[WriteOption]) -> *leveldb_writeoptions_t {
                 }
             }
         }
-        c_options as *leveldb_writeoptions_t
+        c_options as *const leveldb_writeoptions_t
     }
 }
 
-fn to_c_read_options(options: &[ReadOption]) -> *leveldb_readoptions_t {
+fn to_c_read_options(options: &[ReadOption]) -> *const leveldb_readoptions_t {
     unsafe {
         let c_options = leveldb_readoptions_create();
         for option in options.iter() {
@@ -95,11 +98,11 @@ fn to_c_read_options(options: &[ReadOption]) -> *leveldb_readoptions_t {
                 }
             }
         }
-        c_options as *leveldb_readoptions_t
+        c_options as *const leveldb_readoptions_t
     }
 }
 
-fn to_c_str(s: &[u8]) -> (*c_char, size_t) {
+fn to_c_str(s: &[u8]) -> (*const c_char, size_t) {
     unsafe {
         let c_str = s.to_c_str();
         let len = c_str.len();
@@ -109,17 +112,17 @@ fn to_c_str(s: &[u8]) -> (*c_char, size_t) {
 
 impl DB {
     /// Open a database connection
-    pub fn open(name: &str, options: &[OpenOption]) -> Result<~DB, error> {
+    pub fn open(name: &str, options: &[OpenOption]) -> Result<Box<DB>, error> {
         unsafe {
             let c_options = to_c_open_options(options);
             let mut err: *mut c_char = mut_null();
-            let c_db = leveldb_open(c_options as *leveldb_options_t,
+            let c_db = leveldb_open(c_options as *const leveldb_options_t,
                 name.to_c_str().unwrap(),
-                to_mut_unsafe_ptr(&mut err));
-            if is_null(c_db) {
-                return Err(from_c_str(err as *c_char));
+                mem::transmute(&mut err));
+            if c_db.is_null() {
+                return Err(std::string::raw::from_buf(err as *const u8));
             } else {
-                return Ok(~DB{
+                return Ok(box DB{
                     db: c_db
                 });
             }
@@ -140,28 +143,28 @@ impl DB {
             leveldb_put(self.db, to_c_write_options(options),
                 c_key, c_key_len,
                 c_val, c_val_len,
-                to_mut_unsafe_ptr(&mut c_err));
-            if is_not_null(c_err) {
-                return Err(from_c_str(c_err as *c_char));
+                mem::transmute(&mut c_err));
+            if !c_err.is_null() {
+                return Err(std::string::raw::from_buf(c_err as *const u8));
             } else {
                 return Ok(());
             }
         }
     }
 
-    pub fn get(&self, key: &[u8], options: &[ReadOption]) -> Result<~[u8], error> {
+    pub fn get(&self, key: &[u8], options: &[ReadOption]) -> Result<Vec<u8>, error> {
         unsafe {
             let mut c_err: *mut c_char = mut_null();
             let (c_key, c_key_len) = to_c_str(key);
             let mut c_value_len: size_t = 0;
             let c_value = leveldb_get(self.db, to_c_read_options(options),
                 c_key, c_key_len,
-                to_mut_unsafe_ptr(&mut c_value_len),
-                to_mut_unsafe_ptr(&mut c_err));
-            if is_not_null(c_err) {
-                return Err(from_c_str(c_err as *c_char));
+                mem::transmute(&mut c_value_len),
+                mem::transmute(&mut c_err));
+            if !c_err.is_null() {
+                return Err(std::string::raw::from_buf(c_err as *const u8));
             } else {
-                return Ok(from_buf_raw(c_value as *u8, c_value_len as uint));
+                return Ok(from_buf(c_value as *const u8, c_value_len as uint));
             }
         }
     }
@@ -172,9 +175,9 @@ impl DB {
             let (c_key, c_key_len) = to_c_str(key);
             leveldb_delete(self.db, to_c_write_options(options),
                 c_key, c_key_len,
-                to_mut_unsafe_ptr(&mut c_err));
-            if is_not_null(c_err) {
-                return Err(from_c_str(c_err as *c_char));
+                mem::transmute(&mut c_err));
+            if !c_err.is_null() {
+                return Err(std::string::raw::from_buf(c_err as *const u8));
             } else {
                 return Ok(());
             }
@@ -193,9 +196,9 @@ impl DB {
             }
             let mut c_err: *mut c_char = mut_null();
             leveldb_write(self.db, to_c_write_options(options),
-                c_write_batch, to_mut_unsafe_ptr(&mut c_err));
-            if is_not_null(c_err) {
-                return Err(from_c_str(c_err as *c_char));
+                c_write_batch, mem::transmute(&mut c_err));
+            if !c_err.is_null() {
+                return Err(std::string::raw::from_buf(c_err as *const u8));
             } else {
                 return Ok(());
             }
@@ -226,10 +229,10 @@ pub struct DBIterator {
 //     }
 // }
 
-impl Iterator<(~[u8], ~[u8])> for DBIterator {
-    fn next(&mut self) -> Option<(~[u8], ~[u8])> {
+impl Iterator<(Vec<u8>, Vec<u8>)> for DBIterator {
+    fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
         unsafe {
-            if leveldb_iter_valid(self.iter as *leveldb_iterator_t) == 0u8 {
+            if leveldb_iter_valid(self.iter as *const leveldb_iterator_t) == 0u8 {
                 return None;
             } else {
                 let pair = (self.key(), self.value());
@@ -241,11 +244,11 @@ impl Iterator<(~[u8], ~[u8])> for DBIterator {
 }
 
 impl DBIterator {
-    pub fn prev(&mut self) -> Option<(~[u8], ~[u8])> {
+    pub fn prev(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
         unsafe {
             // TODO: this is buggy;
             leveldb_iter_prev(self.iter);
-            if leveldb_iter_valid(self.iter as *leveldb_iterator_t) == 0u8 {
+            if leveldb_iter_valid(self.iter as *const leveldb_iterator_t) == 0u8 {
                 return None;
             } else {
                 let pair = (self.key(), self.value());
@@ -254,31 +257,31 @@ impl DBIterator {
         }
     }
 
-    pub fn key(&self) -> ~[u8] {
+    pub fn key(&self) -> Vec<u8> {
         unsafe {
             let mut c_key_len: size_t = 0;
-            let c_key = leveldb_iter_key(self.iter as *leveldb_iterator_t,
-                to_mut_unsafe_ptr(&mut c_key_len));
-            from_buf_raw(c_key as *u8, c_key_len as uint)
+            let c_key = leveldb_iter_key(self.iter as *const leveldb_iterator_t,
+                mem::transmute(&mut c_key_len));
+            from_buf(c_key as *const u8, c_key_len as uint)
         }
     }
 
-    pub fn value(&self) -> ~[u8] {
+    pub fn value(&self) -> Vec<u8> {
         unsafe {
             let mut c_val_len: size_t = 0;
-            let c_val = leveldb_iter_value(self.iter as *leveldb_iterator_t,
-                to_mut_unsafe_ptr(&mut c_val_len));
-            from_buf_raw(c_val as *u8, c_val_len as uint)
+            let c_val = leveldb_iter_value(self.iter as *const leveldb_iterator_t,
+                mem::transmute(&mut c_val_len));
+            from_buf(c_val as *const u8, c_val_len as uint)
         }
     }
 
     pub fn get_error(&self) -> Option<error> {
         unsafe {
             let mut c_err: *mut c_char = mut_null();
-            leveldb_iter_get_error(self.iter as *leveldb_iterator_t,
-                to_mut_unsafe_ptr(&mut c_err));
-            if is_not_null(c_err) {
-                return Some(from_c_str(c_err as *c_char));
+            leveldb_iter_get_error(self.iter as *const leveldb_iterator_t,
+                mem::transmute(&mut c_err));
+            if !c_err.is_null() {
+                return Some(std::string::raw::from_buf(c_err as *const u8));
             } else {
                 return None;
             }
@@ -287,7 +290,7 @@ impl DBIterator {
 
     pub fn is_valid(&self) -> bool {
         unsafe {
-            return leveldb_iter_valid(self.iter as *leveldb_iterator_t) != 0u8;
+            return leveldb_iter_valid(self.iter as *const leveldb_iterator_t) != 0u8;
         }
     }
 
